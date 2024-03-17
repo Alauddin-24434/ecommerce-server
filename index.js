@@ -12,6 +12,20 @@ import SSLCommerzPayment from "sslcommerz-lts"; // SSLCommerzPayment for handlin
 const app = express();
 dotenv.config(); // Load environment variables from .env file
 
+
+const PORT = process.env.PORT || 5000;
+
+// Enable CORS and JSON body parsing middleware
+const corsOptions = {
+    origin: ['http://localhost:5173', 'https://e-commerce-bazar.web.app'],
+    credentials: true,
+    optionSuccessStatus: 200,
+  }
+  
+  app.use(cors(corsOptions))
+app.use(express.json());
+
+
 // Function to connect to MongoDB
 const connectDB = async () => {
     try {
@@ -76,6 +90,17 @@ const productSchema = new mongoose.Schema({
 
 // Create a Product model based on the schema
 const Product = mongoose.model('Product', productSchema);
+const userAddCart = new mongoose.Schema({
+
+    productId: { type: String, required: true },
+    title: { type: String, required: true },
+    totalPrice: { type: Number, required: true },
+    colors: [{ type: String }],
+
+});
+
+// Create a Product model based on the schema
+const Cart = mongoose.model('Cart', userAddCart);
 
 // Define schema for order data
 const orderSchema = new mongoose.Schema({
@@ -88,8 +113,8 @@ const orderSchema = new mongoose.Schema({
         type: Number,
         required: true
     },
-    userName:{type: String, required: true },
-    email:{type: String, required: true},
+    userName: { type: String, required: true },
+    email: { type: String, required: true },
     paidStatus: {
         type: Boolean,
         default: false
@@ -117,21 +142,6 @@ mongoose.connection.on("disconnected", () => {
     console.log("MongoDB disconnected");
 });
 
-// Enable CORS and JSON body parsing middleware
-const allowedOrigin = 'http://localhost:5173';
-
-// CORS middleware configuration
-const corsOptions = {
-    origin: allowedOrigin,
-    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
-    preflightContinue: false,
-    optionsSuccessStatus: 204,
-    allowedHeaders: 'Content-Type,Authorization',
-};
-
-// Enable CORS middleware
-app.use(cors(corsOptions));
-app.use(express.json());
 
 // Middleware to verify JWT token
 const verifyToken = (req, res, next) => {
@@ -149,7 +159,7 @@ const verifyToken = (req, res, next) => {
 };
 
 // Route to register a new user
-app.post('/api/register', async (req, res) => {
+app.post('/register', async (req, res) => {
     try {
         const { name, email, password } = req.body;
         const existingUser = await User.findOne({ email });
@@ -177,9 +187,33 @@ app.post('/createProduct', async (req, res) => {
         res.status(500).json({ error: 'Internal Server Error' });
     }
 });
+app.post('/userAddCart', async (req, res) => {
+    try {
+        const { productId, totalPrice } = req.body;
+
+
+
+        // Find the existing product in the cart
+        let existingProduct = await Cart.findOne({ productId });
+
+        if (existingProduct) {
+            // If the product exists, add the new price to the existing price
+            existingProduct.totalPrice += parseFloat(totalPrice); // Add the new price to the existing price
+            await existingProduct.save(); // Save the changes
+            res.status(200).json(existingProduct); // Respond with the updated product data
+        } else {
+            // If the product does not exist, create a new cart item
+            const newCartItem = await Cart.create(req.body);
+            res.status(201).json(newCartItem); // Respond with the newly created cart item
+        }
+    } catch (error) {
+        console.error('Error adding product to cart:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
 
 // Route to fetch all products
-app.get('/api/products', async (req, res) => {
+app.get('/products', async (req, res) => {
     try {
         const products = await Product.find();
         res.status(200).json(products);
@@ -189,14 +223,9 @@ app.get('/api/products', async (req, res) => {
     }
 });
 
-app.get('/api/search/categories', async (req, res) => {
+app.get('/userCart', async (req, res) => {
     try {
-        const categories=req.query.categories;
-        if(!categories){
-            return res.status(400).json({message:"Product Not found"})
-        }
-
-        const products = await Product.find({categories});
+        const products = await Cart.find();
         res.status(200).json(products);
     } catch (error) {
         console.error('Error fetching products:', error);
@@ -204,26 +233,41 @@ app.get('/api/search/categories', async (req, res) => {
     }
 });
 
-app.get('/api/userId',verifyToken, async (req, res) => {
+app.get('/search/categories', async (req, res) => {
     try {
-      const _id = req.query._id; // Extract the _id from the query parameters
-      // Use Mongoose to find a user with the specified _id
-      const userData = await User.findOne({_id});
-      if (!userData) {
-        // If no user is found with the provided _id, return a 404 Not Found response
-        return res.status(404).json({ error: 'User not found' });
-      }
-      // If a user is found, send the user data as JSON response
-      res.status(200).json(userData);
-    } catch (error) {
-      console.error('Error fetching data:', error);
-      // If an error occurs, return a 500 Internal Server Error response
-      res.status(500).json({ error: 'Internal Server Error' });
-    }
-  });
-  
+        const categories = req.query.categories;
+        if (!categories) {
+            return res.status(400).json({ message: "Product Not found" })
+        }
 
-app.get('/api/categories', async (req, res) => {
+        const products = await Product.find({ categories });
+        res.status(200).json(products);
+    } catch (error) {
+        console.error('Error fetching products:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+app.get('/userId', verifyToken, async (req, res) => {
+    try {
+        const _id = req.query._id; // Extract the _id from the query parameters
+        // Use Mongoose to find a user with the specified _id
+        const userData = await User.findOne({ _id });
+        if (!userData) {
+            // If no user is found with the provided _id, return a 404 Not Found response
+            return res.status(404).json({ error: 'User not found' });
+        }
+        // If a user is found, send the user data as JSON response
+        res.status(200).json(userData);
+    } catch (error) {
+        console.error('Error fetching data:', error);
+        // If an error occurs, return a 500 Internal Server Error response
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+
+app.get('/categories', async (req, res) => {
     try {
         const categories = await Product.aggregate([
             {
@@ -256,7 +300,7 @@ app.get('/api/categories', async (req, res) => {
 
 
 // Route to fetch a specific product by ID
-app.get('/api/product/:id', async (req, res) => {
+app.get('/product/:id', async (req, res) => {
     try {
         const id = req.params.id;
         const product = await Product.findOne({ _id: id });
@@ -271,7 +315,7 @@ app.get('/api/product/:id', async (req, res) => {
 });
 
 // Route to prepare data for purchasing a product
-app.get('/api/buy/:id', async (req, res) => {
+app.get('/buy/:id', async (req, res) => {
     try {
         const id = req.params.id;
         const count = req.query.count; // Extract count from query string
@@ -287,7 +331,7 @@ app.get('/api/buy/:id', async (req, res) => {
 });
 
 // Route to authenticate user login
-app.post('/api/login', async (req, res) => {
+app.post('/login', async (req, res) => {
     try {
         const { email, password } = req.body;
         const user = await User.findOne({ email });
@@ -307,7 +351,7 @@ app.post('/api/login', async (req, res) => {
 });
 
 // Route to fetch user profile
-app.get('/api/user', verifyToken, async (req, res) => {
+app.get('/user', verifyToken, async (req, res) => {
     try {
         const user = await User.findById(req.userId);
         if (!user) {
@@ -320,15 +364,15 @@ app.get('/api/user', verifyToken, async (req, res) => {
     }
 });
 
-app.get('/api/ordered', async (req, res) => {
+app.get('/ordered', async (req, res) => {
     try {
         const transactionId = req.query.transactionId;
         if (!transactionId) {
             return res.status(400).json({ message: "Transaction ID is required" })
         }
-        const ordered = await Order.findOne({transactionId})
-        if(!ordered){
-            return res.status(404).json({message: "Order not found"})
+        const ordered = await Order.findOne({ transactionId })
+        if (!ordered) {
+            return res.status(404).json({ message: "Order not found" })
         }
         res.status(200).json(ordered)
     } catch (error) {
@@ -338,7 +382,7 @@ app.get('/api/ordered', async (req, res) => {
 })
 
 // Route to create a new order
-app.post('/api/order', async (req, res) => {
+app.post('/order', async (req, res) => {
     try {
         const { productId, count, title, category, userName, email, colorsArray, city, address, zipCode } = req.body;
 
@@ -497,7 +541,9 @@ app.use((err, req, res, next) => {
 });
 
 // Start the server
-const PORT = process.env.PORT || 5000;
+app.get('/', (req, res) => {
+    res.send('E-commerce Server Server is running...')
+  })
 app.listen(PORT, () => {
     connectDB(); // Connect to MongoDB
     console.log(`Server is running on port ${PORT}`);
