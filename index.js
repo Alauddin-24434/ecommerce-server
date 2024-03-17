@@ -137,7 +137,7 @@ app.use(express.json());
 const verifyToken = (req, res, next) => {
     const token = req.headers.authorization;
     if (!token) {
-        return res.status(401).json({ message: "No token provided" });
+        return res.status(401).json({ message: "Unauthorized access" });
     }
     jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
         if (err) {
@@ -188,6 +188,40 @@ app.get('/api/products', async (req, res) => {
         res.status(500).json({ error: 'Internal Server Error' });
     }
 });
+
+app.get('/api/search/categories', async (req, res) => {
+    try {
+        const categories=req.query.categories;
+        if(!categories){
+            return res.status(400).json({message:"Product Not found"})
+        }
+
+        const products = await Product.find({categories});
+        res.status(200).json(products);
+    } catch (error) {
+        console.error('Error fetching products:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+app.get('/api/userId',verifyToken, async (req, res) => {
+    try {
+      const _id = req.query._id; // Extract the _id from the query parameters
+      // Use Mongoose to find a user with the specified _id
+      const userData = await User.findOne({_id});
+      if (!userData) {
+        // If no user is found with the provided _id, return a 404 Not Found response
+        return res.status(404).json({ error: 'User not found' });
+      }
+      // If a user is found, send the user data as JSON response
+      res.status(200).json(userData);
+    } catch (error) {
+      console.error('Error fetching data:', error);
+      // If an error occurs, return a 500 Internal Server Error response
+      res.status(500).json({ error: 'Internal Server Error' });
+    }
+  });
+  
 
 app.get('/api/categories', async (req, res) => {
     try {
